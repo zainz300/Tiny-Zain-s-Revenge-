@@ -1,0 +1,512 @@
+-- // Combined Custom Glove Script: Visuals, Lobby UI, Animations, Remotes, Mobile Inputs, Inventory, & AoE Ground Slam
+
+-- // Services
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+local UserInputService = game:GetService("UserInputService")
+local ContextActionService = game:GetService("ContextActionService")
+local CoreGui = game:GetService("CoreGui")
+
+-- // Variables
+local plr = Players.LocalPlayer
+local leaderstats = plr:WaitForChild("leaderstats")
+
+--------------------------------------------------------------------------------
+-- PART 1: Tool Customization & Lobby Model Functions (Script 1)
+--------------------------------------------------------------------------------
+
+local function IsCustomGloveEquipped()
+    local gloveStat = leaderstats:FindFirstChild("Glove")
+    return gloveStat and gloveStat.Value == "Tiny Zain's Revenge"
+end
+
+local function ApplyCustomToolVisuals(tool)
+    if not IsCustomGloveEquipped() then return end
+
+    tool.Name = "Tiny Zain's Revenge"
+    tool.ToolTip = "I've suffered for far too long by humanity's wretchedness and cruelty I shall start a new by taking over the world and turning it into my views mwahahahahahahahahahahahahahahahahaha THIS WORLD SHALL KNOW PAIN."
+
+    local glovePart = tool:FindFirstChild("Glove") or tool:FindFirstChildWhichIsA("BasePart")
+    
+    if glovePart then
+        glovePart.Material = Enum.Material.Neon
+        glovePart.Color = Color3.fromRGB(255, 255, 0) -- Bright Gold/Yellow
+        
+        if not glovePart:FindFirstChildOfClass("Highlight") then
+            local h = Instance.new("Highlight")
+            h.FillColor = Color3.fromRGB(255, 255, 0)
+            h.OutlineTransparency = 1
+            h.Parent = glovePart
+        end
+    end
+end
+
+local function MonitorCharacter(char)
+    char.ChildAdded:Connect(function(child)
+        if child:IsA("Tool") then
+            ApplyCustomToolVisuals(child)
+        end
+    end)
+end
+
+if plr.Character then
+    MonitorCharacter(plr.Character)
+end
+plr.CharacterAdded:Connect(MonitorCharacter)
+
+local backpack = plr:WaitForChild("Backpack")
+backpack.ChildAdded:Connect(function(child)
+    if child:IsA("Tool") then
+        ApplyCustomToolVisuals(child)
+    end
+end)
+
+local function CreateGloveModel()
+    if Workspace:FindFirstChild("nameModel") then
+        Workspace:FindFirstChild("nameModel"):Destroy()
+    end
+    
+    local model = Instance.new("Model", Workspace)
+    model.Name = "nameModel"
+
+    local glove = Workspace.Lobby.Extended:Clone()
+    local stand = Workspace.Lobby.GloveStands.Extended:Clone()
+
+    glove.Parent = model 
+    stand.Parent = model
+
+    if glove:FindFirstChildOfClass("ClickDetector") then
+        glove:FindFirstChildOfClass("ClickDetector"):Destroy()
+    end
+
+    model:PivotTo(CFrame.new(17906.281, -128.5, -3542.889) * CFrame.Angles(math.rad(180), math.rad(90), 0))
+    return model, glove, stand
+end
+
+local function Customize(Model, Glove, Stand)
+    Glove.Material = Enum.Material.Neon
+    Glove.Color = Color3.fromRGB(255, 255, 0) 
+    Glove.Name = "Tiny Zain's Revenge"
+        
+    Stand.Name = "Stand"
+
+    local Desc = Stand:WaitForChild("GloveDesc")
+    local Out = Desc:WaitForChild("DescOutline")
+    local Frame = Out:WaitForChild("DescFrame")
+    
+    Frame:WaitForChild("Power").Text = "Power: inf"
+    Frame:WaitForChild("Speed").Text = "Speed: inf"
+    Frame:WaitForChild("Name").Text = "Tiny Zain's Revenge"
+    Frame:WaitForChild("Ability").Text = "Abilitys: Fake Slap,Flowery's Jarona 🌻,Ground Slam"
+    Frame:WaitForChild("AbilityType").Text = "CLICK BUTTONS TO USE"
+
+    for _, v in pairs(Frame:GetChildren()) do
+        if v:IsA("TextLabel") then
+            v.Font = Enum.Font.Code
+        end
+    end
+
+    local Slaps = Stand:WaitForChild("SlapsInfoPart"):WaitForChild("SurfaceGui"):WaitForChild("TextLabel")    
+    Slaps.Text = "Requirement: inf"
+   
+    local h = Instance.new("Highlight", Glove)
+    h.FillColor = Color3.fromRGB(255, 255, 0)
+    h.OutlineTransparency = 1
+end
+
+--------------------------------------------------------------------------------
+-- PART 2: Moveset, Animations & Abilities (Glove-Controlled Activation)
+--------------------------------------------------------------------------------
+
+local movesetInitialized = false
+local currentActiveConnections = {}
+
+local masterTriggerE = function() end
+local masterTriggerSmash = function() end
+local masterTriggerSlap = function() end
+
+-- Forward declarations for UI control elements so they can be hidden globally
+local mobileSlapGUI = nil
+local eButtonRef = nil
+local rButtonRef = nil
+
+local function SetAbilityVisibility(isVisible)
+    if mobileSlapGUI then
+        mobileSlapGUI.Enabled = isVisible
+    end
+    if eButtonRef then
+        eButtonRef.Visible = isVisible
+    end
+    if rButtonRef then
+        rButtonRef.Visible = isVisible
+    end
+end
+
+local function CleanupMoveset()
+    for _, conn in ipairs(currentActiveConnections) do
+        pcall(function() conn:Disconnect() end)
+    end
+    currentActiveConnections = {}
+    SetAbilityVisibility(false)
+end
+
+local function SetupMovesetForCharacter(character)
+    CleanupMoveset()
+
+    if not IsCustomGloveEquipped() then return end
+
+    SetAbilityVisibility(true)
+
+    local humanoid = character:WaitForChild("Humanoid")
+    local animator = humanoid:WaitForChild("Animator")
+
+    local idleAnimation = Instance.new("Animation")
+    idleAnimation.AnimationId = "rbxassetid://16102784235"
+    local idleTrack = animator:LoadAnimation(idleAnimation)
+    idleTrack.Priority = Enum.AnimationPriority.Idle 
+    idleTrack:Play()
+
+    local slapAnimation = Instance.new("Animation")
+    slapAnimation.AnimationId = "rbxassetid://13526154547"
+    local slapTrack = animator:LoadAnimation(slapAnimation)
+    slapTrack.Priority = Enum.AnimationPriority.Action 
+
+    local smashAnimation = Instance.new("Animation")
+    smashAnimation.AnimationId = "rbxassetid://78927087860873"
+    local smashTrack = animator:LoadAnimation(smashAnimation)
+    smashTrack.Priority = Enum.AnimationPriority.Action
+
+    local eAnimation = Instance.new("Animation")
+    eAnimation.AnimationId = "rbxassetid://7893287679672"
+    local eTrack = animator:LoadAnimation(eAnimation)
+    eTrack.Priority = Enum.AnimationPriority.Action
+
+    local canSlap, slapCooldown = true, 1 
+    local canSmash, smashCooldown = true, 5 
+    local canE, eCooldown = true, 1 
+
+    local function getNearestPlayer()
+        local nearestPlayer = nil
+        local shortestDistance = math.huge 
+        local myRoot = character and character:FindFirstChild("HumanoidRootPart")
+        if not myRoot then return nil end
+        
+        for _, otherPlayer in ipairs(Players:GetPlayers()) do
+            if otherPlayer ~= plr and otherPlayer.Character then
+                local otherRoot = otherPlayer.Character:FindFirstChild("HumanoidRootPart")
+                local otherHumanoid = otherPlayer.Character:FindFirstChildOfClass("Humanoid")
+                if otherRoot and otherHumanoid and otherHumanoid.Health > 0 then
+                    local distance = (myRoot.Position - otherRoot.Position).Magnitude
+                    if distance < shortestDistance then
+                        shortestDistance = distance
+                        nearestPlayer = otherPlayer
+                    end
+                end
+            end
+        end
+        return nearestPlayer
+    end
+
+    -- Idle Loop Task
+    local idleTaskRunning = true
+    task.spawn(function()
+        while idleTaskRunning and IsCustomGloveEquipped() and character and humanoid and humanoid.Health > 0 do
+            if not idleTrack.IsPlaying and not slapTrack.IsPlaying and not smashTrack.IsPlaying and not eTrack.IsPlaying then
+                idleTrack:Play(0.2)
+            end
+            task.wait(1)
+        end
+    end)
+    table.insert(currentActiveConnections, { Disconnect = function() idleTaskRunning = false end })
+
+    -- Pinata Candy Loop Task
+    local pinataTaskRunning = true
+    task.spawn(function()
+        while pinataTaskRunning and IsCustomGloveEquipped() and character and humanoid and humanoid.Health > 0 do
+            pcall(function()
+                ReplicatedStorage:WaitForChild("Events"):WaitForChild("pinata_candy"):FireServer()
+            end)
+            task.wait(2.7)
+        end
+    end)
+    table.insert(currentActiveConnections, { Disconnect = function() pinataTaskRunning = false end })
+
+    task.spawn(function()
+        if IsCustomGloveEquipped() then
+            pcall(function()
+                ReplicatedStorage:WaitForChild("Events"):WaitForChild("Sand"):FireServer("equip_glove")
+                ReplicatedStorage:WaitForChild("Events"):WaitForChild("Water"):FireServer("equip")
+            end)
+        end
+    end)
+
+    local isWalking = false
+    local runConn = humanoid.Running:Connect(function(speed)
+        if not IsCustomGloveEquipped() then return end
+        if speed > 1 then
+            if not isWalking then
+                isWalking = true
+                task.spawn(function()
+                    pcall(function()
+                        ReplicatedStorage:WaitForChild("Events"):WaitForChild("butcherEvent"):FireServer("start")
+                    end)
+                end)
+            end
+        else
+            if isWalking then
+                isWalking = false
+                task.spawn(function()
+                    pcall(function()
+                        ReplicatedStorage:WaitForChild("Events"):WaitForChild("butcherEvent"):FireServer("end")
+                    end)
+                end)
+            end
+        end
+    end)
+    table.insert(currentActiveConnections, runConn)
+
+    masterTriggerE = function()
+        if not IsCustomGloveEquipped() then return end
+        if canE then
+            canE = false
+            task.spawn(function()
+                pcall(function()
+                    local currentCharacter = plr.Character
+                    if currentCharacter then
+                        local head = currentCharacter:WaitForChild("Head")
+                        ReplicatedStorage.funnyTreeTwo:FireServer(head.Position + Vector3.new(0, head.Size.Y / 2, 0))
+                    end
+                end)
+            end)
+            if idleTrack.IsPlaying then idleTrack:Stop(0.1) end
+            eTrack:Play(0.1)
+            task.delay(eTrack.Length > 0 and eTrack.Length or 1.5, function()
+                eTrack:Stop(0.1)
+                idleTrack:Play(0.2)
+            end)
+            task.delay(eCooldown, function() canE = true end)
+        end
+    end
+
+    masterTriggerSmash = function()
+        if not IsCustomGloveEquipped() then return end
+        if canSmash and not smashTrack.IsPlaying then
+            canSmash = false 
+            if idleTrack.IsPlaying then idleTrack:Stop(0.1) end
+            smashTrack:Play(0.1)
+            
+            task.spawn(function()
+                pcall(function()
+                    ReplicatedStorage:WaitForChild("Events"):WaitForChild("Silly"):FireServer("jump")
+                end)
+            end)
+            
+            task.delay(0.35, function()
+                pcall(function()
+                    local currentCharacter = plr.Character
+                    if not currentCharacter then return end
+                    local myRoot = currentCharacter:FindFirstChild("HumanoidRootPart")
+                    if not myRoot then return end
+
+                    -- 1. Single Target Overclock Slap to Nearest Player
+                    local targetVictim = getNearestPlayer()
+                    if targetVictim then
+                        ReplicatedStorage:WaitForChild("Events"):WaitForChild("Opera"):FireServer({["state"] = "overclock_slap", ["victim"] = targetVictim})
+                    end
+
+                    -- 2. AoE UTGHit scan for all players within 10 studs (including specific named users and any other target within range)
+                    for _, otherPlayer in ipairs(Players:GetPlayers()) do
+                        if otherPlayer ~= plr and otherPlayer.Character then
+                            local otherRoot = otherPlayer.Character:FindFirstChild("HumanoidRootPart")
+                            local otherHumanoid = otherPlayer.Character:FindFirstChildOfClass("Humanoid")
+                            if otherRoot and otherHumanoid and otherHumanoid.Health > 0 then
+                                local distance = (myRoot.Position - otherRoot.Position).Magnitude
+                                if distance <= 10 then
+                                    local leftArm = otherPlayer.Character:FindFirstChild("Left Arm")
+                                    if leftArm then
+                                        pcall(function()
+                                            ReplicatedStorage.UTGHit:FireServer({[1] = leftArm})
+                                        end)
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end)
+            end)
+
+            task.delay(smashTrack.Length > 0 and smashTrack.Length or 2, function()
+                if not idleTrack.IsPlaying and not slapTrack.IsPlaying and not smashTrack.IsPlaying and not eTrack.IsPlaying then
+                    idleTrack:Play(0.2)
+                end
+            end)
+            task.delay(smashCooldown, function() canSmash = true end)
+        end
+    end
+
+    masterTriggerSlap = function()
+        if not IsCustomGloveEquipped() then return end
+        if canSlap then
+            canSlap = false
+            task.spawn(function()
+                pcall(function()
+                    ReplicatedStorage:WaitForChild("Events"):WaitForChild("butcherAttack"):InvokeServer("hitConfirm")
+                end)
+            end)
+            if idleTrack.IsPlaying then idleTrack:Stop(0.1) end
+            slapTrack:Play(0.1)
+            slapTrack:AdjustSpeed(0.7)
+            task.delay((slapTrack.Length > 0 and slapTrack.Length or 1) / 0.7, function()
+                if not idleTrack.IsPlaying and not slapTrack.IsPlaying and not smashTrack.IsPlaying and not eTrack.IsPlaying then
+                    idleTrack:Play(0.2)
+                end
+            end)
+            task.delay(slapCooldown, function() canSlap = true end)
+        end
+    end
+
+    if not movesetInitialized then
+        movesetInitialized = true
+
+        ContextActionService:BindActionAtPriority("BypassEAbility", function(_, state)
+            if state == Enum.UserInputState.Begin and IsCustomGloveEquipped() then masterTriggerE() end
+            return Enum.ContextActionResult.Sink 
+        end, true, 1100, Enum.KeyCode.E)
+
+        ContextActionService:BindActionAtPriority("BypassRAbility", function(_, state)
+            if state == Enum.UserInputState.Begin and IsCustomGloveEquipped() then masterTriggerSmash() end
+            return Enum.ContextActionResult.Sink 
+        end, true, 1100, Enum.KeyCode.R)
+
+        task.spawn(function()
+            task.wait(1)
+            pcall(function()
+                eButtonRef = ContextActionService:GetButton("BypassEAbility")
+                rButtonRef = ContextActionService:GetButton("BypassRAbility")
+                if eButtonRef then eButtonRef.Position = UDim2.new(0.7, 0, 0.4, 0) end
+                if rButtonRef then rButtonRef.Position = UDim2.new(0.85, 0, 0.4, 0) end
+                
+                SetAbilityVisibility(IsCustomGloveEquipped())
+            end)
+        end)
+
+        mobileSlapGUI = CoreGui:FindFirstChild("MobileSlapGUI") or plr:WaitForChild("PlayerGui"):FindFirstChild("MobileSlapGUI")
+        if not mobileSlapGUI then
+            mobileSlapGUI = Instance.new("ScreenGui")
+            mobileSlapGUI.Name = "MobileSlapGUI"
+            mobileSlapGUI.ResetOnSpawn = false
+            mobileSlapGUI.Parent = (CoreGui:FindFirstChild("CoreGui") or plr:WaitForChild("PlayerGui"))
+
+            local slapButton = Instance.new("TextButton")
+            slapButton.Name = "SlapButton"
+            slapButton.Size = UDim2.new(0, 100, 0, 100)
+            slapButton.Position = UDim2.new(0.7, 0, 0.65, 0)
+            slapButton.BackgroundColor3 = Color3.fromRGB(255, 100, 100)
+            slapButton.BackgroundTransparency = 0.4
+            slapButton.Text = "Fake SLAP"
+            slapButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+            slapButton.TextSize = 20
+            slapButton.Font = Enum.Font.SourceSansBold
+            slapButton.Parent = mobileSlapGUI
+
+            local uiCorner = Instance.new("UICorner")
+            uiCorner.CornerRadius = UDim.new(1, 0)
+            uiCorner.Parent = slapButton
+
+            slapButton.MouseButton1Click:Connect(function()
+                if IsCustomGloveEquipped() then
+                    masterTriggerSlap()
+                end
+            end)
+        end
+
+        UserInputService.InputBegan:Connect(function(input, gameProcessed)
+            if not gameProcessed and input.UserInputType == Enum.UserInputType.MouseButton1 then
+                if IsCustomGloveEquipped() then
+                    masterTriggerSlap()
+                end
+            end
+        end)
+    end
+end
+
+leaderstats:WaitForChild("Glove").Changed:Connect(function(newGlove)
+    if newGlove ~= "Tiny Zain's Revenge" then
+        CleanupMoveset()
+        print("Custom glove unequipped — abilities deactivated.")
+    else
+        if plr.Character then
+            SetupMovesetForCharacter(plr.Character)
+        end
+    end
+end)
+
+plr.CharacterAdded:Connect(function(newChar)
+    task.wait(0.6)
+    SetupMovesetForCharacter(newChar)
+end)
+
+--------------------------------------------------------------------------------
+-- PART 3: Stand Click Detection & Inventory Integration
+--------------------------------------------------------------------------------
+
+local function ClickDetection(Glove)
+    local equip = ReplicatedStorage.GloveEquipParticle.Attachment
+    local fail = ReplicatedStorage.GloveEquipParticle.Attachment2
+    local click = Instance.new("ClickDetector", Glove)
+    
+    local g = leaderstats:WaitForChild("Glove")
+    local unlocked = plr:WaitForChild("_unlockedGloves"):WaitForChild("Untitled Tag Glove").Value 
+
+    click.MouseClick:Connect(function()
+        if unlocked then           
+           local sidebarArgs = { [1] = "Inventory" }
+           pcall(function()
+               ReplicatedStorage.Remotes.SidebarButtonClicked:FireServer(unpack(sidebarArgs))
+           end)
+
+           local netArgs = { [1] = "Untitled Tag Glove" }
+           local networkFolder = ReplicatedStorage:FindFirstChild("_NETWORK")
+           if networkFolder then
+               local rem = networkFolder:FindFirstChild("{388eb21b-b296-4fc6-87dd-5c9884a70c6d}")
+               if rem then
+                   pcall(function()
+                       rem:FireServer(unpack(netArgs))
+                   end)
+               end
+           end
+
+           pcall(function()
+               fireclickdetector(Workspace.Lobby["Untitled Tag Glove"].ClickDetector)
+           end)
+           
+           task.spawn(function()
+              task.wait(0.8)
+              g.Value = "Tiny Zain's Revenge"
+              if plr.Character then
+                  SetupMovesetForCharacter(plr.Character)
+              end
+           end)
+
+           local s = equip:Clone()
+           s.Parent = Glove
+           for _, v in pairs(s:GetDescendants()) do if v:IsA("ParticleEmitter") then v:Emit(5) end end 
+           task.delay(1, function() if s then s:Destroy() end end)
+        else
+           Workspace.Sounds.Fail:Play()
+           local f = fail:Clone()
+           f.Parent = Glove
+           for _, v in pairs(f:GetDescendants()) do if v:IsA("ParticleEmitter") then v:Emit(5) end end 
+           task.delay(1, function() if f then f:Destroy() end end)
+        end
+    end)
+end
+
+task.spawn(function()
+    pcall(function()
+        local model, glove, stand = CreateGloveModel()
+        Customize(model, glove, stand)
+        ClickDetection(glove)
+    end)
+end)
