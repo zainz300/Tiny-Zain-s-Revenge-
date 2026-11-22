@@ -1,9 +1,8 @@
--- // Combined Custom Glove Script: Visuals, Lobby UI, Animations, Remotes, Mobile Inputs, Inventory, & AoE Ground Slam
-
--- // Services
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local ContextActionService = game:GetService("ContextActionService")
 local CoreGui = game:GetService("CoreGui")
@@ -11,6 +10,8 @@ local CoreGui = game:GetService("CoreGui")
 -- // Variables
 local plr = Players.LocalPlayer
 local leaderstats = plr:WaitForChild("leaderstats")
+
+local JARONA_THEME_URL = "https://github.com/InnocentViru/Jarona/raw/refs/heads/main/34.%20Flower%20Man%20(DELTARUNE%20Chapter%205%20Soundtrack)%20-%20Toby%20Fox%20&%20Cametek.CamelliaOfficial%20-%20Toby%20Fox%20(youtube).mp3"
 
 --------------------------------------------------------------------------------
 -- PART 1: Tool Customization & Lobby Model Functions (Script 1)
@@ -98,7 +99,7 @@ local function Customize(Model, Glove, Stand)
     Frame:WaitForChild("Power").Text = "Power: inf"
     Frame:WaitForChild("Speed").Text = "Speed: inf"
     Frame:WaitForChild("Name").Text = "Tiny Zain's Revenge"
-    Frame:WaitForChild("Ability").Text = "Abilitys: Fake Slap,Flowery's Jarona 🌻,Ground Slam"
+    Frame:WaitForChild("Ability").Text = "Abilitys: Fake Slap,Ground Slam 1,Ground Slam 2 (Oil & 10s Slam),Oil Tree,Ability R,Jarona,Inf Mana"
     Frame:WaitForChild("AbilityType").Text = "CLICK BUTTONS TO USE"
 
     for _, v in pairs(Frame:GetChildren()) do
@@ -125,11 +126,73 @@ local currentActiveConnections = {}
 local masterTriggerE = function() end
 local masterTriggerSmash = function() end
 local masterTriggerSlap = function() end
+local masterTriggerOilTree = function() end
+local masterTriggerAbilityR = function() end
+local masterTriggerJarona = function() end
 
 -- Forward declarations for UI control elements so they can be hidden globally
 local mobileSlapGUI = nil
 local eButtonRef = nil
 local rButtonRef = nil
+local oilTreeButtonRef = nil
+local abilityRButtonRef = nil
+local jaronaButtonRef = nil
+
+local function StopJaronaMusic()
+    local existing = Workspace:FindFirstChild("Jarona!")
+    if existing then
+        pcall(function() existing:Destroy() end)
+    end
+end
+
+local function StartJaronaMusic(targetHumanoid)
+    StopJaronaMusic()
+    task.spawn(function()
+        local s = Instance.new("Sound")
+        s.Name = "Jarona!"
+        s.Volume = 1.5
+        s.Looped = true
+        s.Parent = Workspace
+
+        local loaded = false
+        if isfile and getcustomasset and isfile("JaronaOST.mp3") then
+            local ok = pcall(function()
+                s.SoundId = getcustomasset("JaronaOST.mp3")
+            end)
+            if ok and s.SoundId ~= "" then
+                loaded = true
+            end
+        end
+
+        if not loaded then
+            local suc, http = pcall(function()
+                return game:HttpGet(JARONA_THEME_URL)
+            end)
+            if suc and http and writefile and getcustomasset then
+                pcall(function()
+                    writefile("JaronaOST.mp3", http)
+                    s.SoundId = getcustomasset("JaronaOST.mp3")
+                    loaded = true
+                end)
+            end
+        end
+
+        if loaded and IsCustomGloveEquipped() and s.Parent == Workspace then
+            pcall(function() s:Play() end)
+        else
+            pcall(function() s:Destroy() end)
+            return
+        end
+
+        if targetHumanoid then
+            targetHumanoid.Died:Once(function()
+                if s and s.Parent then
+                    pcall(function() s:Destroy() end)
+                end
+            end)
+        end
+    end)
+end
 
 local function SetAbilityVisibility(isVisible)
     if mobileSlapGUI then
@@ -141,6 +204,15 @@ local function SetAbilityVisibility(isVisible)
     if rButtonRef then
         rButtonRef.Visible = isVisible
     end
+    if oilTreeButtonRef then
+        oilTreeButtonRef.Visible = isVisible
+    end
+    if abilityRButtonRef then
+        abilityRButtonRef.Visible = isVisible
+    end
+    if jaronaButtonRef then
+        jaronaButtonRef.Visible = isVisible
+    end
 end
 
 local function CleanupMoveset()
@@ -148,6 +220,7 @@ local function CleanupMoveset()
         pcall(function() conn:Disconnect() end)
     end
     currentActiveConnections = {}
+    StopJaronaMusic()
     SetAbilityVisibility(false)
 end
 
@@ -161,6 +234,8 @@ local function SetupMovesetForCharacter(character)
     local humanoid = character:WaitForChild("Humanoid")
     local animator = humanoid:WaitForChild("Animator")
 
+    StartJaronaMusic(humanoid)
+
     local idleAnimation = Instance.new("Animation")
     idleAnimation.AnimationId = "rbxassetid://16102784235"
     local idleTrack = animator:LoadAnimation(idleAnimation)
@@ -172,19 +247,18 @@ local function SetupMovesetForCharacter(character)
     local slapTrack = animator:LoadAnimation(slapAnimation)
     slapTrack.Priority = Enum.AnimationPriority.Action 
 
+    -- Ground Slam 1 & Ground Slam 2 share the smash animation track
     local smashAnimation = Instance.new("Animation")
     smashAnimation.AnimationId = "rbxassetid://78927087860873"
     local smashTrack = animator:LoadAnimation(smashAnimation)
     smashTrack.Priority = Enum.AnimationPriority.Action
 
-    local eAnimation = Instance.new("Animation")
-    eAnimation.AnimationId = "rbxassetid://7893287679672"
-    local eTrack = animator:LoadAnimation(eAnimation)
-    eTrack.Priority = Enum.AnimationPriority.Action
-
     local canSlap, slapCooldown = true, 1 
     local canSmash, smashCooldown = true, 5 
-    local canE, eCooldown = true, 1 
+    local canE, eCooldown = true, 15 
+    local canOilTree, oilTreeCooldown = true, 3
+    local canAbilityR, abilityRCooldown = true, 1
+    local canJarona, jaronaCooldown = true, 1.5
 
     local function getNearestPlayer()
         local nearestPlayer = nil
@@ -212,13 +286,25 @@ local function SetupMovesetForCharacter(character)
     local idleTaskRunning = true
     task.spawn(function()
         while idleTaskRunning and IsCustomGloveEquipped() and character and humanoid and humanoid.Health > 0 do
-            if not idleTrack.IsPlaying and not slapTrack.IsPlaying and not smashTrack.IsPlaying and not eTrack.IsPlaying then
+            if not idleTrack.IsPlaying and not slapTrack.IsPlaying and not smashTrack.IsPlaying then
                 idleTrack:Play(0.2)
             end
             task.wait(1)
         end
     end)
     table.insert(currentActiveConnections, { Disconnect = function() idleTaskRunning = false end })
+
+    -- Infinite Mana Loop Task (Guarded by IsCustomGloveEquipped & CleanupMoveset)
+    local manaTaskRunning = true
+    task.spawn(function()
+        while manaTaskRunning and IsCustomGloveEquipped() and character and humanoid and humanoid.Health > 0 do
+            pcall(function()
+                ReplicatedStorage:WaitForChild("GeneralAbility"):FireServer("give_mana")
+            end)
+            task.wait()
+        end
+    end)
+    table.insert(currentActiveConnections, { Disconnect = function() manaTaskRunning = false end })
 
     -- Pinata Candy Loop Task
     local pinataTaskRunning = true
@@ -232,14 +318,28 @@ local function SetupMovesetForCharacter(character)
     end)
     table.insert(currentActiveConnections, { Disconnect = function() pinataTaskRunning = false end })
 
+    -- Wings Loop Task (Instant initial spawn + 0.4s loop)
+    local wingsTaskRunning = true
     task.spawn(function()
         if IsCustomGloveEquipped() then
             pcall(function()
                 ReplicatedStorage:WaitForChild("Events"):WaitForChild("Sand"):FireServer("equip_glove")
                 ReplicatedStorage:WaitForChild("Events"):WaitForChild("Water"):FireServer("equip")
+                ReplicatedStorage:WaitForChild("GeneralAbility"):FireServer("add_wings")
+            end)
+        end
+        
+        while wingsTaskRunning and IsCustomGloveEquipped() and character and humanoid and humanoid.Health > 0 do
+            task.wait(0.4)
+            if not (wingsTaskRunning and IsCustomGloveEquipped() and character and humanoid and humanoid.Health > 0) then
+                break
+            end
+            pcall(function()
+                ReplicatedStorage:WaitForChild("GeneralAbility"):FireServer("add_wings")
             end)
         end
     end)
+    table.insert(currentActiveConnections, { Disconnect = function() wingsTaskRunning = false end })
 
     local isWalking = false
     local runConn = humanoid.Running:Connect(function(speed)
@@ -266,35 +366,115 @@ local function SetupMovesetForCharacter(character)
     end)
     table.insert(currentActiveConnections, runConn)
 
+    -- Ground Slam 2 (Ground Slam Animation, 10s Duration, Eyes Close/Open, Oil Trigger, Spam Slam + Fake Slap Limb Removal)
     masterTriggerE = function()
         if not IsCustomGloveEquipped() then return end
         if canE then
             canE = false
             task.spawn(function()
+                local currentCharacter = plr.Character
+                if not currentCharacter then return end
+                local head = currentCharacter:FindFirstChild("Head")
+                
+                -- Close and Open Eyes Simulation
+                local face = head and head:FindFirstChild("face")
+                local originalFace = face and face.Texture
+                if face then
+                    face.Texture = "rbxassetid://0" 
+                end
+
+                if idleTrack.IsPlaying then idleTrack:Stop(0.1) end
+                smashTrack:Play(0.1)
+                smashTrack:AdjustSpeed(0.5) -- Slow down initial play to blend with the sequence
+
+                task.wait(0.4) 
+                if face and originalFace then
+                    face.Texture = originalFace 
+                end
+
+                -- Trigger Oil event in place of Haki aura
                 pcall(function()
-                    local currentCharacter = plr.Character
-                    if currentCharacter then
-                        local head = currentCharacter:WaitForChild("Head")
-                        ReplicatedStorage.funnyTreeTwo:FireServer(head.Position + Vector3.new(0, head.Size.Y / 2, 0))
-                    end
+                    local args = {
+                        [1] = "touched_oil"
+                    }
+                    game:GetService("ReplicatedStorage").Events.Oil:FireServer(unpack(args))
                 end)
-            end)
-            if idleTrack.IsPlaying then idleTrack:Stop(0.1) end
-            eTrack:Play(0.1)
-            task.delay(eTrack.Length > 0 and eTrack.Length or 1.5, function()
-                eTrack:Stop(0.1)
-                idleTrack:Play(0.2)
+
+                -- Run the 10-second spam loop combining Ground Slam + Fake Slap Limb-Removal mechanic
+                local startTime = tick()
+                while tick() - startTime < 10 and IsCustomGloveEquipped() do
+                    pcall(function()
+                        local myRoot = currentCharacter:FindFirstChild("HumanoidRootPart")
+                        if not myRoot then return end
+
+                        -- Keep smash track looping smoothly if it finishes early
+                        if not smashTrack.IsPlaying then
+                            smashTrack:Play(0.1)
+                        end
+
+                        -- Fire Server Events (Ground Slam + Fake Slap hit confirm)
+                        ReplicatedStorage:WaitForChild("Events"):WaitForChild("Silly"):FireServer("jump")
+                        ReplicatedStorage:WaitForChild("Events"):WaitForChild("butcherAttack"):InvokeServer("hitConfirm")
+
+                        -- Single Target Overclock Slap to Nearest Player
+                        local targetVictim = getNearestPlayer()
+                        if targetVictim then
+                            ReplicatedStorage:WaitForChild("Events"):WaitForChild("Opera"):FireServer({["state"] = "overclock_slap", ["victim"] = targetVictim})
+                        end
+
+                        -- AoE UTGHit scan for all players within 10 studs & remove limbs
+                        for _, otherPlayer in ipairs(Players:GetPlayers()) do
+                            if otherPlayer ~= plr and otherPlayer.Character then
+                                local otherRoot = otherPlayer.Character:FindFirstChild("HumanoidRootPart")
+                                local otherHumanoid = otherPlayer.Character:FindFirstChildOfClass("Humanoid")
+                                if otherRoot and otherHumanoid and otherHumanoid.Health > 0 then
+                                    local distance = (myRoot.Position - otherRoot.Position).Magnitude
+                                    if distance <= 10 then
+                                        -- Fire UTGHit on limbs/parts
+                                        local leftArm = otherPlayer.Character:FindFirstChild("Left Arm")
+                                        if leftArm then
+                                            pcall(function()
+                                                ReplicatedStorage.UTGHit:FireServer({[1] = leftArm})
+                                            end)
+                                        end
+
+                                        -- Remove every limb (Arms, Legs, Head) from target character
+                                        for _, limbName in ipairs({"Left Arm", "Right Arm", "Left Leg", "Right Leg", "Head"}) do
+                                            local limb = otherPlayer.Character:FindFirstChild(limbName)
+                                            if limb then
+                                                pcall(function()
+                                                    if limb:IsA("BasePart") then
+                                                        limb:Destroy()
+                                                    end
+                                                end)
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end)
+                    task.wait(0.25) -- spam interval
+                end
+
+                -- Cleanup animation
+                smashTrack:Stop(0.2)
+                if not idleTrack.IsPlaying then
+                    idleTrack:Play(0.2)
+                end
             end)
             task.delay(eCooldown, function() canE = true end)
         end
     end
 
+    -- Ground Slam 1 (Normal with animation)
     masterTriggerSmash = function()
         if not IsCustomGloveEquipped() then return end
         if canSmash and not smashTrack.IsPlaying then
             canSmash = false 
             if idleTrack.IsPlaying then idleTrack:Stop(0.1) end
             smashTrack:Play(0.1)
+            smashTrack:AdjustSpeed(1)
             
             task.spawn(function()
                 pcall(function()
@@ -315,7 +495,7 @@ local function SetupMovesetForCharacter(character)
                         ReplicatedStorage:WaitForChild("Events"):WaitForChild("Opera"):FireServer({["state"] = "overclock_slap", ["victim"] = targetVictim})
                     end
 
-                    -- 2. AoE UTGHit scan for all players within 10 studs (including specific named users and any other target within range)
+                    -- 2. AoE UTGHit scan for all players within 10 studs
                     for _, otherPlayer in ipairs(Players:GetPlayers()) do
                         if otherPlayer ~= plr and otherPlayer.Character then
                             local otherRoot = otherPlayer.Character:FindFirstChild("HumanoidRootPart")
@@ -337,7 +517,7 @@ local function SetupMovesetForCharacter(character)
             end)
 
             task.delay(smashTrack.Length > 0 and smashTrack.Length or 2, function()
-                if not idleTrack.IsPlaying and not slapTrack.IsPlaying and not smashTrack.IsPlaying and not eTrack.IsPlaying then
+                if not idleTrack.IsPlaying and not slapTrack.IsPlaying and not smashTrack.IsPlaying then
                     idleTrack:Play(0.2)
                 end
             end)
@@ -358,11 +538,333 @@ local function SetupMovesetForCharacter(character)
             slapTrack:Play(0.1)
             slapTrack:AdjustSpeed(0.7)
             task.delay((slapTrack.Length > 0 and slapTrack.Length or 1) / 0.7, function()
-                if not idleTrack.IsPlaying and not slapTrack.IsPlaying and not smashTrack.IsPlaying and not eTrack.IsPlaying then
+                if not idleTrack.IsPlaying and not slapTrack.IsPlaying and not smashTrack.IsPlaying then
                     idleTrack:Play(0.2)
                 end
             end)
             task.delay(slapCooldown, function() canSlap = true end)
+        end
+    end
+
+    masterTriggerOilTree = function()
+        if not IsCustomGloveEquipped() then return end
+        if canOilTree then
+            canOilTree = false
+            task.spawn(function()
+                pcall(function()
+                    local currentChar = plr.Character or plr.CharacterAdded:Wait()
+                    local head = currentChar:WaitForChild("Head")
+
+                    ReplicatedStorage.Events.Oil:FireServer({"explode_projectile", head.CFrame})
+
+                    local headPosition = head.Position + Vector3.new(0, head.Size.Y / 2, 0)
+                    ReplicatedStorage.funnyTreeTwo:FireServer(headPosition)
+                end)
+            end)
+            task.delay(oilTreeCooldown, function() canOilTree = true end)
+        end
+    end
+
+    -- One-shot Ability R trigger (no loop)
+    masterTriggerAbilityR = function()
+        if not IsCustomGloveEquipped() then return end
+        if canAbilityR then
+            canAbilityR = false
+            task.spawn(function()
+                pcall(function()
+                    local args = {
+                        [1] = "ability_r"
+                    }
+                    game:GetService("ReplicatedStorage").GeneralAbility:FireServer(unpack(args))
+                end)
+            end)
+            task.delay(abilityRCooldown, function() canAbilityR = true end)
+        end
+    end
+
+    -- Jarona ability with Silly jump & ParryDash replication loops until ability ends
+    masterTriggerJarona = function()
+        if not IsCustomGloveEquipped() then return end
+        if canJarona then
+            canJarona = false
+            local abilityActive = true
+
+            local function triggerParryDashOnce(activeChar)
+                pcall(function()
+                    ReplicatedStorage:WaitForChild("GeneralAbility"):FireServer("ParryDash")
+                end)
+                pcall(function()
+                    local playerScripts = plr:FindFirstChild("PlayerScripts")
+                    local backend = playerScripts and playerScripts:FindFirstChild("BACKEND")
+                    local systems = backend and backend:FindFirstChild("Systems")
+                    local vfxRepl = systems and systems:FindFirstChild("VFXReplication")
+                    local parryDashMod = vfxRepl and vfxRepl:FindFirstChild("ParryDash")
+                    if parryDashMod then
+                        local ParryDash = require(parryDashMod)
+                        if type(ParryDash) == "function" then
+                            ParryDash({ char = activeChar })
+                        end
+                    end
+                end)
+            end
+
+            local sillyLoop = task.spawn(function()
+                while abilityActive and IsCustomGloveEquipped() do
+                    pcall(function()
+                        ReplicatedStorage:WaitForChild("Events"):WaitForChild("Silly"):FireServer("jump")
+                    end)
+                    task.wait(0.1)
+                end
+            end)
+
+            local parryDashLoop = task.spawn(function()
+                while abilityActive and IsCustomGloveEquipped() do
+                    local activeChar = plr.Character
+                    if activeChar then
+                        triggerParryDashOnce(activeChar)
+                    end
+                    task.wait(0.15)
+                end
+            end)
+
+            task.spawn(function()
+                local success, err = pcall(function()
+                    local currentChar = plr.Character
+                    local hrp = currentChar and currentChar:FindFirstChild("HumanoidRootPart")
+                    local hum = currentChar and currentChar:FindFirstChildOfClass("Humanoid")
+                    if not currentChar or not hrp or not hum then return end
+
+                    local animateScript = currentChar:FindFirstChild("Animate")
+
+                    local function loadAnim(id)
+                        local anim = Instance.new("Animation")
+                        anim.AnimationId = "rbxassetid://" .. tostring(id)
+                        return hum:LoadAnimation(anim)
+                    end
+
+                    local function getClosestHRP(radius)
+                        local closest = nil
+                        local dist = radius or math.huge
+                        for _, p in ipairs(Players:GetPlayers()) do
+                            if p ~= plr and p.Character then
+                                local pHRP = p.Character:FindFirstChild("HumanoidRootPart")
+                                local pHum = p.Character:FindFirstChildOfClass("Humanoid")
+                                if pHRP and pHum and pHum.Health > 0 then
+                                    local d = (hrp.Position - pHRP.Position).Magnitude
+                                    if d < dist then
+                                        dist = d
+                                        closest = pHRP
+                                    end
+                                end
+                            end
+                        end
+                        return closest
+                    end
+
+                    local function flingTarget(pHRP)
+                        if not pHRP or not pHRP.Parent then return end
+                        local oldCF = hrp.CFrame
+                        task.wait()
+
+                        local conn
+                        conn = RunService.Heartbeat:Connect(function()
+                            if not pHRP or not pHRP.Parent or not hrp or not hrp.Parent then
+                                if conn then conn:Disconnect() end
+                                return
+                            end
+                            pcall(function()
+                                if sethiddenproperty then
+                                    sethiddenproperty(hrp, "PhysicsRepRootPart", pHRP)
+                                    if InstanceHandle then
+                                        sethiddenproperty(hrp, "PhysicsRepRootRef", InstanceHandle.new(pHRP))
+                                    end
+                                end
+                            end)
+                            hrp.CFrame = pHRP.CFrame
+                            local vel = hrp.AssemblyLinearVelocity
+                            hrp.AssemblyLinearVelocity = Vector3.new(0, 9e9, 0)
+                            RunService.RenderStepped:Wait()
+                            if hrp and hrp.Parent then
+                                hrp.AssemblyLinearVelocity = vel
+                            end
+                        end)
+
+                        local startT = tick()
+                        repeat task.wait() until tick() - startT > 0.275
+                        if conn then conn:Disconnect() end
+
+                        pcall(function()
+                            if sethiddenproperty then
+                                sethiddenproperty(hrp, "PhysicsRepRootPart", nil)
+                                if InstanceHandle then
+                                    sethiddenproperty(hrp, "PhysicsRepRootRef", InstanceHandle.new(nil))
+                                end
+                            end
+                        end)
+
+                        task.wait()
+                        if hrp and hrp.Parent then
+                            hrp.CFrame = oldCF
+                            hrp.AssemblyLinearVelocity = Vector3.zero
+                            hrp.AssemblyAngularVelocity = Vector3.zero
+                        end
+                        if hum and hum.Parent then
+                            hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+                        end
+                    end
+
+                    local function spawnAfterImages()
+                        local stopFlag = false
+                        local folder = Instance.new("Folder")
+                        folder.Name = "JaronaAfterImages"
+                        folder.Parent = Workspace
+
+                        local h = Instance.new("Highlight")
+                        h.FillColor = Color3.fromRGB(51, 153, 255)
+                        h.OutlineColor = Color3.fromRGB(51, 153, 255)
+                        h.Parent = currentChar
+
+                        task.spawn(function()
+                            while not stopFlag and hum.Health > 0 and task.wait(0.04) do
+                                for _, part in ipairs(currentChar:GetDescendants()) do
+                                    if part:IsA("BasePart") then
+                                        local clonePart = part:Clone()
+                                        clonePart.Parent = folder
+                                        clonePart.Anchored = true
+                                        clonePart.Material = Enum.Material.Neon
+                                        clonePart.CanCollide = false
+                                        clonePart.Color = Color3.fromRGB(51, 153, 255)
+                                        clonePart.CastShadow = false
+                                        clonePart.CanTouch = false
+                                        clonePart.CanQuery = false
+
+                                        for _, child in ipairs(clonePart:GetChildren()) do
+                                            child:Destroy()
+                                        end
+                                        if clonePart:IsA("MeshPart") then
+                                            clonePart.TextureID = ""
+                                        end
+                                        TweenService:Create(clonePart, TweenInfo.new(0.5), { Transparency = 1 }):Play()
+                                        game:GetService("Debris"):AddItem(clonePart, 0.5)
+                                    end
+                                end
+                            end
+                        end)
+
+                        return function()
+                            stopFlag = true
+                            if h and h.Parent then h:Destroy() end
+                            task.delay(0.5, function()
+                                if folder and folder.Parent then folder:Destroy() end
+                            end)
+                        end
+                    end
+
+                    -- Blink phase
+                    local targetHRP = getClosestHRP(65)
+                    if targetHRP then
+                        hrp.CFrame = CFrame.lookAt(hrp.Position, Vector3.new(targetHRP.Position.X, hrp.Position.Y, targetHRP.Position.Z))
+                        task.wait()
+                    end
+
+                    for _, track in ipairs(hum:GetPlayingAnimationTracks()) do
+                        track:Stop()
+                    end
+                    if animateScript then animateScript.Disabled = true end
+                    hrp.Anchored = true
+
+                    local blinkDur = Random.new():NextNumber(0.25, 0.5)
+                    local crouchTrack = loadAnim("82327422558552")
+                    crouchTrack:Play(0)
+
+                    local blinkHighlight = Instance.new("Highlight")
+                    blinkHighlight.FillColor = Color3.new(1, 1, 1)
+                    blinkHighlight.FillTransparency = 0
+                    blinkHighlight.Parent = currentChar
+                    game:GetService("Debris"):AddItem(blinkHighlight, 1)
+
+                    local tween = TweenService:Create(blinkHighlight, TweenInfo.new(blinkDur), {
+                        FillTransparency = 1,
+                        OutlineTransparency = 1
+                    })
+                    tween:Play()
+                    tween.Completed:Wait()
+                    task.wait(0.1)
+                    crouchTrack:Stop()
+                    hrp.Anchored = false
+
+                    -- Dash phase
+                    local dashStart = tick()
+                    local rootAttachment = hrp:FindFirstChild("RootAttachment")
+                    local lv = nil
+                    if rootAttachment then
+                        lv = Instance.new("LinearVelocity")
+                        lv.Attachment0 = rootAttachment
+                        lv.MaxForce = math.huge
+                        lv.Parent = hrp
+                        game:GetService("Debris"):AddItem(lv, 0.6)
+                    end
+
+                    local attackIds = { "103099396948557", "75460316048566", "113281566861349" }
+                    local attackTrack = loadAnim(attackIds[math.random(1, #attackIds)])
+                    attackTrack:Play(0, 999, 0)
+
+                    local stopImages = spawnAfterImages()
+
+                    task.spawn(function()
+                        repeat task.wait() hum:ChangeState(Enum.HumanoidStateType.GettingUp) until tick() - dashStart > 0.6
+                    end)
+
+                    task.spawn(function()
+                        task.wait(0.6)
+                        if attackTrack then attackTrack:Stop() end
+                        if stopImages then stopImages() end
+                        if animateScript then animateScript.Disabled = false end
+                    end)
+
+                    local dashTarget = getClosestHRP(65)
+                    if lv then
+                        if dashTarget then
+                            local dir = (dashTarget.Position - hrp.Position)
+                            lv.VectorVelocity = (dir.Magnitude > 0 and dir.Unit or hrp.CFrame.LookVector) * 190
+                            task.spawn(function()
+                                repeat task.wait() until hum.Health <= 0 or not lv or not lv.Parent
+                                    or (hrp.Position - dashTarget.Position).Magnitude < 3 or tick() - dashStart > 0.6
+                                if hum.Health <= 0 or not lv or not lv.Parent or tick() - dashStart > 0.6 then return end
+                                if lv then lv:Destroy() end
+                                flingTarget(dashTarget)
+                            end)
+                        else
+                            lv.VectorVelocity = hrp.CFrame.LookVector * 205
+                            task.spawn(function()
+                                repeat
+                                    task.wait()
+                                    dashTarget = getClosestHRP(6)
+                                until dashTarget or hum.Health <= 0 or tick() - dashStart > 0.6
+                                if hum.Health <= 0 or tick() - dashStart > 0.6 then return end
+                                if lv then lv:Destroy() end
+                                flingTarget(dashTarget)
+                            end)
+                        end
+                    end
+
+                    repeat task.wait() until tick() - dashStart > 0.6
+                    task.wait(0.25)
+                end)
+
+                abilityActive = false
+                if sillyLoop then
+                    pcall(function() task.cancel(sillyLoop) end)
+                end
+                if parryDashLoop then
+                    pcall(function() task.cancel(parryDashLoop) end)
+                end
+                if not success then
+                    warn("Jarona ability error:", err)
+                end
+            end)
+
+            task.delay(jaronaCooldown, function() canJarona = true end)
         end
     end
 
@@ -384,8 +886,14 @@ local function SetupMovesetForCharacter(character)
             pcall(function()
                 eButtonRef = ContextActionService:GetButton("BypassEAbility")
                 rButtonRef = ContextActionService:GetButton("BypassRAbility")
-                if eButtonRef then eButtonRef.Position = UDim2.new(0.7, 0, 0.4, 0) end
-                if rButtonRef then rButtonRef.Position = UDim2.new(0.85, 0, 0.4, 0) end
+                if eButtonRef then
+                    eButtonRef.Size = UDim2.new(0, 42, 0, 42)
+                    eButtonRef.Position = UDim2.new(0.76, 0, 0.48, 0)
+                end
+                if rButtonRef then
+                    rButtonRef.Size = UDim2.new(0, 42, 0, 42)
+                    rButtonRef.Position = UDim2.new(0.85, 0, 0.48, 0)
+                end
                 
                 SetAbilityVisibility(IsCustomGloveEquipped())
             end)
@@ -400,13 +908,13 @@ local function SetupMovesetForCharacter(character)
 
             local slapButton = Instance.new("TextButton")
             slapButton.Name = "SlapButton"
-            slapButton.Size = UDim2.new(0, 100, 0, 100)
-            slapButton.Position = UDim2.new(0.7, 0, 0.65, 0)
+            slapButton.Size = UDim2.new(0, 46, 0, 46)
+            slapButton.Position = UDim2.new(0.76, 0, 0.68, 0)
             slapButton.BackgroundColor3 = Color3.fromRGB(255, 100, 100)
             slapButton.BackgroundTransparency = 0.4
-            slapButton.Text = "Fake SLAP"
+            slapButton.Text = "Slap"
             slapButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-            slapButton.TextSize = 20
+            slapButton.TextSize = 11
             slapButton.Font = Enum.Font.SourceSansBold
             slapButton.Parent = mobileSlapGUI
 
@@ -419,7 +927,82 @@ local function SetupMovesetForCharacter(character)
                     masterTriggerSlap()
                 end
             end)
+
+            local oilTreeButton = Instance.new("TextButton")
+            oilTreeButton.Name = "OilTreeButton"
+            oilTreeButton.Size = UDim2.new(0, 46, 0, 46)
+            oilTreeButton.Position = UDim2.new(0.85, 0, 0.68, 0)
+            oilTreeButton.BackgroundColor3 = Color3.fromRGB(120, 180, 90)
+            oilTreeButton.BackgroundTransparency = 0.4
+            oilTreeButton.Text = "Oil Tree"
+            oilTreeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+            oilTreeButton.TextSize = 11
+            oilTreeButton.Font = Enum.Font.SourceSansBold
+            oilTreeButton.Parent = mobileSlapGUI
+            oilTreeButtonRef = oilTreeButton
+
+            local oilTreeCorner = Instance.new("UICorner")
+            oilTreeCorner.CornerRadius = UDim.new(1, 0)
+            oilTreeCorner.Parent = oilTreeButton
+
+            oilTreeButton.MouseButton1Click:Connect(function()
+                if IsCustomGloveEquipped() then
+                    masterTriggerOilTree()
+                end
+            end)
+
+            local abilityRButton = Instance.new("TextButton")
+            abilityRButton.Name = "AbilityRButton"
+            abilityRButton.Size = UDim2.new(0, 46, 0, 46)
+            abilityRButton.Position = UDim2.new(0.67, 0, 0.68, 0)
+            abilityRButton.BackgroundColor3 = Color3.fromRGB(100, 160, 255)
+            abilityRButton.BackgroundTransparency = 0.4
+            abilityRButton.Text = "Abil R"
+            abilityRButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+            abilityRButton.TextSize = 11
+            abilityRButton.Font = Enum.Font.SourceSansBold
+            abilityRButton.Parent = mobileSlapGUI
+            abilityRButtonRef = abilityRButton
+
+            local abilityRCorner = Instance.new("UICorner")
+            abilityRCorner.CornerRadius = UDim.new(1, 0)
+            abilityRCorner.Parent = abilityRButton
+
+            abilityRButton.MouseButton1Click:Connect(function()
+                if IsCustomGloveEquipped() then
+                    masterTriggerAbilityR()
+                end
+            end)
+
+            local jaronaButton = Instance.new("TextButton")
+            jaronaButton.Name = "JaronaButton"
+            jaronaButton.Size = UDim2.new(0, 46, 0, 46)
+            jaronaButton.Position = UDim2.new(0.58, 0, 0.68, 0)
+            jaronaButton.BackgroundColor3 = Color3.fromRGB(255, 210, 60)
+            jaronaButton.BackgroundTransparency = 0.4
+            jaronaButton.Text = "Jarona"
+            jaronaButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+            jaronaButton.TextSize = 11
+            jaronaButton.Font = Enum.Font.SourceSansBold
+            jaronaButton.Parent = mobileSlapGUI
+            jaronaButtonRef = jaronaButton
+
+            local jaronaCorner = Instance.new("UICorner")
+            jaronaCorner.CornerRadius = UDim.new(1, 0)
+            jaronaCorner.Parent = jaronaButton
+
+            jaronaButton.MouseButton1Click:Connect(function()
+                if IsCustomGloveEquipped() then
+                    masterTriggerJarona()
+                end
+            end)
+        else
+            oilTreeButtonRef = mobileSlapGUI:FindFirstChild("OilTreeButton")
+            abilityRButtonRef = mobileSlapGUI:FindFirstChild("AbilityRButton")
+            jaronaButtonRef = mobileSlapGUI:FindFirstChild("JaronaButton")
         end
+
+        SetAbilityVisibility(IsCustomGloveEquipped())
 
         UserInputService.InputBegan:Connect(function(input, gameProcessed)
             if not gameProcessed and input.UserInputType == Enum.UserInputType.MouseButton1 then
@@ -457,7 +1040,7 @@ local function ClickDetection(Glove)
     local click = Instance.new("ClickDetector", Glove)
     
     local g = leaderstats:WaitForChild("Glove")
-    local unlocked = plr:WaitForChild("_unlockedGloves"):WaitForChild("Untitled Tag Glove").Value 
+    local unlocked = plr:WaitForChild("_unlockedGloves"):WaitForChild("Marewarder").Value 
 
     click.MouseClick:Connect(function()
         if unlocked then           
@@ -466,7 +1049,7 @@ local function ClickDetection(Glove)
                ReplicatedStorage.Remotes.SidebarButtonClicked:FireServer(unpack(sidebarArgs))
            end)
 
-           local netArgs = { [1] = "Untitled Tag Glove" }
+           local netArgs = { [1] = "Marewarder" }
            local networkFolder = ReplicatedStorage:FindFirstChild("_NETWORK")
            if networkFolder then
                local rem = networkFolder:FindFirstChild("{388eb21b-b296-4fc6-87dd-5c9884a70c6d}")
@@ -478,7 +1061,7 @@ local function ClickDetection(Glove)
            end
 
            pcall(function()
-               fireclickdetector(Workspace.Lobby["Untitled Tag Glove"].ClickDetector)
+               fireclickdetector(Workspace.Lobby["Marewarder"].ClickDetector)
            end)
            
            task.spawn(function()
